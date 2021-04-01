@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"regexp"
+	"strconv"
+	"go-stress-testing/helper"
 )
 
 const (
@@ -81,8 +84,16 @@ type Request struct {
 }
 
 func (r *Request) GetBody() (body io.Reader) {
-	body = strings.NewReader(r.Body)
-
+	reg1 := regexp.MustCompile(`random(\d+)?`)
+	result := r.Body
+	match := reg1.FindAllStringSubmatch(result, -1)
+	if match != nil {
+		for _, v := range match {
+			l, _ := strconv.Atoi(v[1])
+			result = strings.Replace(result, v[0], helper.GetRandomString(l), 1)
+		}
+	}
+	body = strings.NewReader(result)
 	return
 }
 
