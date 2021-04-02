@@ -1,9 +1,11 @@
-# 压测工具如何选择? ab、locust、Jmeter、go压测工具【单台机器100w连接压测实战】
+# go实现的压测工具【单台机器100w连接压测实战】
 
 本文介绍压测是什么，解释压测的专属名词，教大家如何压测。介绍市面上的常见压测工具(ab、locust、Jmeter、go实现的压测工具、云压测)，对比这些压测工具，教大家如何选择一款适合自己的压测工具，本文还有两个压测实战项目：
 
-- 单台机器对HTTP短连接 QPS 1W+ 的压测实战
-- 单台机器100W长连接的压测实战
+- 单台机器对 HTTP 短连接 QPS 1W+ 的压测实战
+- 单台机器 100W 长连接的压测实战
+- 对 grpc 接口进行压测
+> 简单扩展即可支持 私有协议
 
 ## 目录
 - [1、项目说明](#1项目说明)
@@ -21,7 +23,7 @@
 - [3、常见的压测工具](#3常见的压测工具)
     - [3.1 ab](#31-ab)
     - [3.2 locust](#32-locust)
-    - [3.3 Jmeter](#33-Jmeter)
+    - [3.3 JMeter](#33-JMeter)
     - [3.4 云压测](#34-云压测)
         - [3.4.1 云压测介绍](#341-云压测介绍)
         - [3.4.2 阿里云 性能测试 PTS](#342-阿里云-性能测试-PTS)
@@ -31,6 +33,7 @@
     - [4.2 用法](#42-用法)
     - [4.3 实现](#43-实现)
     - [4.4 go-stress-testing 对 Golang web 压测](#44-go-stress-testing-对-golang-web-压测)
+    - [4.5 grpc压测](#45-grpc压测)
 - [5、压测工具的比较](#5压测工具的比较)
     - [5.1 比较](#51-比较)
     - [5.2 如何选择压测工具](#52-如何选择压测工具)
@@ -40,40 +43,34 @@
     - [6.3 客户端配置](#63-客户端配置)
     - [6.4 准备](#64-准备)
     - [6.5 压测数据](#65-压测数据)
-- [7、总结](#7总结)
-- [8、参考文献](#8参考文献)
-
-
+- [7、常见问题](#7常见问题)
+- [8、总结](#8总结)
+- [9、参考文献](#9参考文献)
 
 
 ## 1、项目说明
 ### 1.1 go-stress-testing
 
-go 实现的压测工具，每个用户用一个协程的方式模拟，最大限度的利用CPU资源
+go 实现的压测工具，每个用户用一个协程的方式模拟，最大限度的利用 CPU 资源
 
 ### 1.2 项目体验
 
 - 可以在 mac/linux/windows 不同平台下执行的命令
 
+- [go-stress-testing](https://github.com/link1st/go-stress-testing/releases) 压测工具下载地址
+
 参数说明:
 
 `-c` 表示并发数
 
-`-n` 每个并发执行请求的次数，总请求的次数 = 并发数 * 每个并发执行请求的次数
+`-n` 每个并发执行请求的次数，总请求的次数 = 并发数 `*` 每个并发执行请求的次数
 
 `-u` 需要压测的地址
 
-```shell script
+```shell
 
-# clone 项目
-git clone https://github.com/link1st/go-stress-testing.git
-
-# 进入项目目录
-cd go-stress-testing
-
-# 运行 
-go run main.go -c 1 -n 100 -u https://www.baidu.com/
-
+# 运行 以mac为示例
+./go-stress-testing-mac -c 1 -n 100 -u https://www.baidu.com/
 
 ```
 
@@ -131,7 +128,6 @@ go run main.go -c 1 -n 100 -u https://www.baidu.com/
 
 **错误码**: 压测中，接口返回的 code码:返回次数的集合
 
-
 ## 2、压测
 ### 2.1 压测是什么
 
@@ -143,7 +139,6 @@ go run main.go -c 1 -n 100 -u https://www.baidu.com/
 
 - 压测的目的就是通过压测(模拟真实用户的行为)，测算出机器的性能(单台机器的QPS)，从而推算出系统在承受指定用户数(100W)时，需要多少机器能支撑得住
 - 压测是在上线前为了应对未来可能达到的用户数量的一次预估(提前演练)，压测以后通过优化程序的性能或准备充足的机器，来保证用户的体验。
-
 
 ### 2.3 压测名词解释
 #### 2.3.1 压测类型解释
@@ -167,9 +162,9 @@ go run main.go -c 1 -n 100 -u https://www.baidu.com/
 | 请求成功数(Request Success Number) | 在一次压测中，请求成功的数量    |
 | 请求失败数(Request Failures Number) | 在一次压测中，请求失败的数量    |
 | 错误率(Error Rate) | 在压测中，请求成功的数量与请求失败数量的比率  |
-| 最大响应时间(Max Response Time) | 在一次事务中，从发出请求或指令系统做出的反映(响应)的最大时间  |
-| 最少响应时间(Mininum Response Time) | 在一次事务中，从发出请求或指令系统做出的反映(响应)的最少时间  |
-| 平均响应时间(Average Response Time) | 在一次事务中，从发出请求或指令系统做出的反映(响应)的平均时间  |
+| 最大响应时间(Max Response Time) | 在一次压测中，从发出请求或指令系统做出的反映(响应)的最大时间  |
+| 最少响应时间(Mininum Response Time) | 在一次压测中，从发出请求或指令系统做出的反映(响应)的最少时间  |
+| 平均响应时间(Average Response Time) | 在一次压测中，从发出请求或指令系统做出的反映(响应)的平均时间  |
 
 #### 2.3.3 机器性能指标解释
 
@@ -189,29 +184,29 @@ go run main.go -c 1 -n 100 -u https://www.baidu.com/
 
 ### 2.4 如何计算压测指标
 
-- 压测我们需要有目的性的压测，这次压测我们需要达到什么目标(如:单台机器的性能为100QPS?网站能同时满足100W人同时在线)
+- 压测我们需要有目的性的压测，这次压测我们需要达到什么目标(如:单台机器的性能为 100QPS?网站能同时满足100W人同时在线)
 - 可以通过以下计算方法来进行计算:
 - 压测原则:每天80%的访问量集中在20%的时间里，这20%的时间就叫做峰值
-- 公式: ( 总PV数*80% ) / ( 每天的秒数*20% ) = 峰值时间每秒钟请求数(QPS)
+- 公式: ( 总PV数`*`80% ) / ( 每天的秒数`*`20% ) = 峰值时间每秒钟请求数(QPS)
 - 机器: 峰值时间每秒钟请求数(QPS) / 单台机器的QPS = 需要的机器的数量
 
 - 假设:网站每天的用户数(100W)，每天的用户的访问量约为3000W PV，这台机器的需要多少QPS?
-> `( 30000000*0.8 ) / (86400 * 0.2) ≈ 1389 (QPS)`
+> ( 30000000\*0.8 ) / (86400 * 0.2) ≈ 1389 (QPS)
 
 - 假设:单台机器的的QPS是69，需要需要多少台机器来支撑？
-> `1389 / 69 ≈ 20` 
+> 1389 / 69 ≈ 20
 
 ## 3、常见的压测工具
 ### 3.1 ab
 - 简介
 
-ApacheBench 是 Apache服务器自带的一个web压力测试工具，简称ab。ab又是一个命令行工具，对发起负载的本机要求很低，根据ab命令可以创建很多的并发访问线程，模拟多个访问者同时对某一URL地址进行访问，因此可以用来测试目标服务器的负载压力。总的来说ab工具小巧简单，上手学习较快，可以提供需要的基本性能指标，但是没有图形化结果，不能监控。
+ApacheBench 是 Apache 服务器自带的一个web压力测试工具，简称 ab。ab 又是一个命令行工具，对发起负载的本机要求很低，根据 ab 命令可以创建很多的并发访问线程，模拟多个访问者同时对某一 URL 地址进行访问，因此可以用来测试目标服务器的负载压力。总的来说 ab 工具小巧简单，上手学习较快，可以提供需要的基本性能指标，但是没有图形化结果，不能监控。
 
-ab属于一个轻量级的压测工具，结果不会特别准确，可以用作参考。
+ab 属于一个轻量级的压测工具，结果不会特别准确，可以用作参考。
 
 - 安装
 
-```shell script
+```shell
 # 在linux环境安装
 sudo yum -y install httpd
 ```
@@ -232,7 +227,7 @@ Options are:
 
 - 压测命令
 
-```shell script
+```shell
 # 使用ab压测工具，对百度的链接 请求100次，并发数1
 ab -n 100 -c 1 https://www.baidu.com/
 ```
@@ -297,7 +292,7 @@ Percentage of the requests served within a certain time (ms)
 
 - `Failed requests` 失败个数
 
-- `Requests per second` 吞吐量，指的是某个并发用户下单位时间内处理的请求数。等效于QPS，其实可以看作同一个统计方式，只是叫法不同而已。
+- `Requests per second` 吞吐量，指的是某个并发用户下单位时间内处理的请求数。等效于 QPS，其实可以看作同一个统计方式，只是叫法不同而已。
 
 - `Time per request` 用户平均请求等待时间
 
@@ -307,11 +302,11 @@ Percentage of the requests served within a certain time (ms)
 
 - 简介
 
-是非常简单易用、分布式、python开发的压力测试工具。有图形化界面，支持将压测数据导出。
+是非常简单易用、分布式、python 开发的压力测试工具。有图形化界面，支持将压测数据导出。
 
 - 安装
 
-```shell script
+```shell
 # pip3 安装locust
 pip3  install locust
 # 查看是否安装成功
@@ -327,7 +322,7 @@ pip3 install websocket-client
 编写压测脚本 **test.py**
 
 ```python
-from locust import HttpLocust, TaskSet, task
+from locust import HttpUser, TaskSet, task
 
 # 定义用户行为
 class UserBehavior(TaskSet):
@@ -336,16 +331,15 @@ class UserBehavior(TaskSet):
     def baidu_index(self):
         self.client.get("/")
 
-
-class WebsiteUser(HttpLocust):
-    task_set = UserBehavior # 指向一个定义的用户行为类
+class WebsiteUser(HttpUser):
+    task = [UserBehavior] # 指向一个定义的用户行为类
     min_wait = 3000 # 执行事务之间用户等待时间的下界（单位：毫秒）
     max_wait = 6000 # 执行事务之间用户等待时间的上界（单位：毫秒）
 ```
 
 - 启动压测
 
-```shell script
+```shell
 locust -f  test.py --host=https://www.baidu.com
 ```
 
@@ -387,7 +381,7 @@ Hatch rate (users spawned/second) 每秒钟增加用户数
 
 ![locust 压测页面](https://img.mukewang.com/5d5e4fad000177e125501368.png)
 
-### 3.3 Jmeter
+### 3.3 JMeter
 
 - 简介
 
@@ -435,52 +429,75 @@ PTS（Performance Testing Service）是面向所有技术背景人员的云化�
 
 ### 4.1 介绍
 
-- go-stress-testing 是go语言实现的简单压测工具，源码开源、支持二次开发，可以压测http、webSocket请求，使用协程模拟单个用户，可以更高效的利用CPU资源。
+- go-stress-testing 是go语言实现的简单压测工具，源码开源、支持二次开发，可以压测http、webSocket请求、私有rpc调用，使用协程模拟单个用户，可以更高效的利用CPU资源。
 
 - 项目地址 [https://github.com/link1st/go-stress-testing](https://github.com/link1st/go-stress-testing)
 
 ### 4.2 用法
 
+- [go-stress-testing](https://github.com/link1st/go-stress-testing/releases) 下载地址
+- clone 项目源码运行的时候，需要将项目 clone 到 **$GOPATH** 目录下
 - 支持参数:
 
 ```
-Usage of ./go_stress_testing_mac:
+Usage of ./go-stress-testing-mac:
   -c uint
-        并发数 (default 1)
-  -d string
-        调试模式 (default "false")
+      并发数 (default 1)
   -n uint
-        请求总数 (default 1)
-  -p string
-        curl文件路径
+      请求数(单个并发/协程) (default 1)
   -u string
-        请求地址
+      压测地址
+  -d string
+      调试模式 (default "false")
+  -H value
+      自定义头信息传递给服务器 示例:-H 'Content-Type: application/json'
+  -data string
+      HTTP POST方式传送数据
   -v string
-        验证方法 http 支持:statusCode、json webSocket支持:json (default "statusCode")
+      验证方法 http 支持:statusCode、json webSocket支持:json
+  -p string
+      curl文件路径
 ```
 
 - `-n` 是单个用户请求的次数，请求总次数 = `-c`* `-n`， 这里考虑的是模拟用户行为，所以这个是每个用户请求的次数
 
+- 下载以后执行下面命令即可压测
 
 - 使用示例:
 
 ```
 # 查看用法
-go run main.go
+./go-stress-testing-mac
 
 # 使用请求百度页面
-go run main.go -c 1 -n 100 -u https://www.baidu.com/
+./go-stress-testing-mac -c 1 -n 100 -u https://www.baidu.com/
 
 # 使用debug模式请求百度页面
-go run main.go -c 1 -n 1 -d true -u https://www.baidu.com/
+./go-stress-testing-mac -c 1 -n 1 -d true -u https://www.baidu.com/
 
 # 使用 curl文件(文件在curl目录下) 的方式请求
-go run main.go -c 1 -n 1 -p curl/baidu.curl.txt
+./go-stress-testing-mac -c 1 -n 1 -p curl/baidu.curl.txt
 
 # 压测webSocket连接
-go run main.go -c 10 -n 10 -u ws://127.0.0.1:8089/acc
+./go-stress-testing-mac -c 10 -n 10 -u ws://127.0.0.1:8089/acc
 ```
 
+- 完整压测命令示例
+```shell script
+# 更多参数 支持 header、post body
+go run main.go -c 1 -n 1 -d true -u 'https://page.aliyun.com/delivery/plan/list' \
+  -H 'authority: page.aliyun.com' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'origin: https://cn.aliyun.com' \
+  -H 'sec-fetch-site: same-site' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'referer: https://cn.aliyun.com/' \
+  -H 'accept-language: zh-CN,zh;q=0.9' \
+  -H 'cookie: aliyun_choice=CN; JSESSIONID=J8866281-CKCFJ4BUZ7GDO9V89YBW1-KJ3J5V9K-GYUW7; maliyun_temporary_console0=1AbLByOMHeZe3G41KYd5WWZvrM%2BGErkaLcWfBbgveKA9ifboArprPASvFUUfhwHtt44qsDwVqMk8Wkdr1F5LccYk2mPCZJiXb0q%2Bllj5u3SQGQurtyPqnG489y%2FkoA%2FEvOwsXJTvXTFQPK%2BGJD4FJg%3D%3D; cna=L3Q5F8cHDGgCAXL3r8fEZtdU; isg=BFNThsmSCcgX-sUcc5Jo2s2T4tF9COfKYi8g9wVwr3KphHMmjdh3GrHFvPTqJD_C; l=eBaceXLnQGBjstRJBOfwPurza77OSIRAguPzaNbMiT5POw1B5WAlWZbqyNY6C3GVh6lwR37EODnaBeYBc3K-nxvOu9eFfGMmn' \
+  -data 'adPlanQueryParam=%7B%22adZone%22%3A%7B%22positionList%22%3A%5B%7B%22positionId%22%3A83%7D%5D%7D%2C%22requestId%22%3A%2217958651-f205-44c7-ad5d-f8af92a6217a%22%7D'
+```
 
 - 使用 curl文件进行压测
 
@@ -489,8 +506,11 @@ curl是Linux在命令行下的工作的文件传输工具，是一款很强大�
 使用curl文件可以压测使用非GET的请求，支持设置http请求的 method、cookies、header、body等参数
 
 
-chrome 浏览器生成 curl文件，打开开发者模式(快捷键F12)，如图所示，生成 curl 在终端执行命令
-![copy cURL](https://img.mukewang.com/5d60eddd0001f4b016661114.png)
+**I:** chrome 浏览器生成 curl文件，打开开发者模式(快捷键F12)，如图所示，生成 curl 在终端执行命令
+![chrome cURL](https://img.mukewang.com/5d60eddd0001f4b016661114.png)
+
+**II:** postman 生成 curl 命令
+![postman cURL](https://img.mukewang.com/5ed79b590001837120581530.png)
 
 生成内容粘贴到项目目录下的**curl/baidu.curl.txt**文件中，执行下面命令就可以从curl.txt文件中读取需要压测的内容进行压测了
 
@@ -555,6 +575,7 @@ package main
 import (
     "log"
     "net/http"
+    "runtime"
 )
 
 const (
@@ -566,7 +587,7 @@ func main() {
     runtime.GOMAXPROCS(runtime.NumCPU() - 1)
 
     hello := func(w http.ResponseWriter, req *http.Request) {
-        data := "Hello, World!"
+        data := "Hello, go-stress-testing! \n"
 
         w.Header().Add("Server", "golang")
         w.Write([]byte(data))
@@ -587,11 +608,12 @@ func main() {
 - go_stress_testing 压测命令
 
 ```
-./go_stress_testing_linux -c 100 -n 10000 -u http://127.0.0.1:8088/
+./go-stress-testing-linux -c 100 -n 10000 -u http://127.0.0.1:8088/
 ```
 
 
 - 压测结果
+- [压测结果 示例](https://github.com/link1st/go-stress-testing/issues/32)
 
 | 并发数  |  go_stress_testing QPS  |
 | :----: |  :----:  |
@@ -603,9 +625,50 @@ func main() {
 |   50   | 19922.56 |
 |   80   | 19155.33 |
 |   100  | 18336.46 |
-|   200  | 16813.86 |
 
 从压测的结果上看：效果还不错，压测QPS有接近2W
+
+### 4.5 grpc压测
+- 介绍如何压测 grpc 接口
+> [添加对 grpc 接口压测 commit](https://github.com/link1st/go-stress-testing/commit/2b4b14aaf026d08276531cf76f42de90efd3bc61)
+- 1. 启动Server
+```shell script
+# 进入 grpc server 目录
+cd tests/grpc
+
+# 启动 grpc server
+go run main.go
+```
+
+- 2. 对 grpc server 协议进行压测
+```
+# 回到项目根目录
+go run main.go -c 300 -n 1000 -u grpc://127.0.0.1:8099 -data world
+
+开始启动  并发数:300 请求数:1000 请求参数:
+request:
+ form:grpc
+ url:grpc://127.0.0.1:8099
+ method:POST
+ headers:map[Content-Type:application/x-www-form-urlencoded; charset=utf-8]
+ data:world
+ verify:
+ timeout:30s
+ debug:false
+
+─────┬───────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┬────────
+ 耗时 │ 并发数 │ 成功数 │ 失败数 │   qps  │最长耗时  │最短耗时 │平均耗时  │下载字节 │字节每秒  │ 错误码
+─────┼───────┼───────┼───────┼────────┼────────┼────────┼────────┼────────┼────────┼────────
+   1s│    186│  14086│      0│34177.69│   22.40│    0.63│    8.78│        │        │200:14086
+   2s│    265│  30408│      0│26005.09│   32.68│    0.63│   11.54│        │        │200:30408
+   3s│    300│  46747│      0│21890.46│   40.84│    0.63│   13.70│        │        │200:46747
+   4s│    300│  62837│      0│20057.06│   45.81│    0.63│   14.96│        │        │200:62837
+   5s│    300│  79119│      0│19134.52│   45.81│    0.63│   15.68│        │        │200:79119
+```
+
+- 如何扩展其它私有协议
+> 由于私有协议、grpc 协议 都涉及到代码的书写，所以需要 编写go 的代码才能完成
+> 参考 [添加对 grpc 接口压测 commit](https://github.com/link1st/go-stress-testing/commit/2b4b14aaf026d08276531cf76f42de90efd3bc61)
 
 ## 5、压测工具的比较
 ### 5.1 比较
@@ -701,7 +764,7 @@ centOS 7.6 上述设置不生效，需要手动修改配置文件
 core 是限制内核文件的大小，这里设置为 unlimited
 
 ```
-# 添加一下参数
+# 添加以下参数
 root soft nofile 1040000
 root hard nofile 1040000
 
@@ -754,6 +817,8 @@ net.ipv4.tcp_mem = 786432 2097152 3145728
 net.ipv4.tcp_rmem = 4096 4096 16777216
 net.ipv4.tcp_wmem = 4096 4096 16777216
 ```
+
+`sysctl -p` 修改配置以后使得配置生效命令
 
 配置解释:
 
@@ -836,7 +901,17 @@ VmSize: 27133804 kB
 
 至此，压测已经全部完成，单台机器支持100W连接已经满足~
 
-## 7、总结
+## 7.常见问题
+- **Q:** 压测过程中会出现大量 **TIME_WAIT**
+
+ A: 参考TCP四次挥手原理，主动关闭连接的一方会出现 **TIME_WAIT** 状态，等待的时长为 2MSL(约1分钟左右)
+
+ 原因是：主动断开的一方回复 ACK 消息可能丢失，TCP 是可靠的传输协议，在没有收到 ACK 消息的另一端会重试，重新发送FIN消息，所以主动关闭的一方会等待 2MSL 时间，防止对方重试，这就出现了大量 **TIME_WAIT** 状态（参考: 四次挥手的最后两次）
+
+TCP 握手：
+<img border="0" src="https://img.mukewang.com/5ec504300001aa7b08301233.png" width="830"/>
+
+## 8、总结
 
 到这里压测总算完成，本次压测花费16元巨款。
 
@@ -845,7 +920,7 @@ VmSize: 27133804 kB
 本文通过介绍什么是压测，在什么情况下需要压测，通过单台机器100W长连接的压测实战了解Linux内核的参数的调优。如果觉得现有的压测工具不适用，可以自己实现或者是改造成属于自己的自己的工具。
 
 
-## 8、参考文献
+## 9、参考文献
 
 [性能测试工具](https://testerhome.com/topics/17068)
 
@@ -866,3 +941,12 @@ VmSize: 27133804 kB
 [https://github.com/link1st/go-stress-testing](https://github.com/link1st/go-stress-testing)
 
 github 搜:link1st 查看项目 go-stress-testing
+
+### 意见反馈
+
+- 在项目中遇到问题可以直接在这里找找答案或者提问 [issues](https://github.com/link1st/go-stress-testing/issues)
+- 也可以添加我的微信(申请信息填写:公司、姓名，我好备注下)，直接反馈给我
+<br/>
+<p align="center">
+     <img border="0" src="https://img.mukewang.com/5eb376b60001ddc208300832.png" alt="添加link1st的微信" width="200"/>
+</p>

@@ -9,11 +9,16 @@ package client
 
 import (
 	"crypto/tls"
-	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"time"
+
+	"go-stress-testing/helper"
 )
+
+var logErr = log.New(os.Stderr, "", 0)
 
 // HTTP 请求
 // method 方法 GET POST
@@ -21,7 +26,7 @@ import (
 // body 请求的body
 // headers 请求头信息
 // timeout 请求超时时间
-func HttpRequest(method, url string, body io.Reader, headers map[string]string, timeout time.Duration) (resp *http.Response, err error) {
+func HttpRequest(method, url string, body io.Reader, headers map[string]string, timeout time.Duration) (resp *http.Response, requestTime uint64, err error) {
 
 	// 跳过证书验证
 	tr := &http.Transport{
@@ -38,7 +43,11 @@ func HttpRequest(method, url string, body io.Reader, headers map[string]string, 
 
 		return
 	}
-
+	req.Close = true
+	// 在req中设置Host，解决在header中设置Host不生效问题
+	if _, ok := headers["Host"]; ok {
+		req.Host = headers["Host"]
+	}
 	// 设置默认为utf-8编码
 	if _, ok := headers["Content-Type"]; !ok {
 		if headers == nil {
@@ -51,9 +60,11 @@ func HttpRequest(method, url string, body io.Reader, headers map[string]string, 
 		req.Header.Set(key, value)
 	}
 
+	startTime := time.Now()
 	resp, err = client.Do(req)
+	requestTime = uint64(helper.DiffNano(startTime))
 	if err != nil {
-		fmt.Println("请求失败:", err)
+		logErr.Println("请求失败:", err)
 
 		return
 	}
@@ -63,3 +74,4 @@ func HttpRequest(method, url string, body io.Reader, headers map[string]string, 
 
 	return
 }
+
