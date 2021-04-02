@@ -10,15 +10,35 @@ package model
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"go-stress-testing/helper"
 )
 
 // curl参数解析
 type CURL struct {
 	Data map[string][]string
+}
+
+func (c *CURL) getDataValue(keys []string) []string {
+	var (
+		value = make([]string, 0)
+	)
+
+	for _, key := range keys {
+		var (
+			ok bool
+		)
+
+		value, ok = c.Data[key]
+		if ok {
+			break
+		}
+	}
+
+	return value
 }
 
 // 从文件中解析curl
@@ -45,38 +65,97 @@ func ParseTheFile(path string) (curl *CURL, err error) {
 		file.Close()
 	}()
 
-	data, err := ioutil.ReadAll(file)
+	dataBytes, err := ioutil.ReadAll(file)
 	if err != nil {
 		err = errors.New("读取文件失败:" + err.Error())
 
 		return
 	}
+	data := string(dataBytes)
 
-	dataStr := string(data)
-	for true {
-		index := strings.Index(dataStr, "'")
+	for len(data) > 0 {
+		if strings.HasPrefix(data, "curl") {
+			data = data[5:]
+		}
+
+		data = strings.TrimSpace(data)
+		var (
+			key   string
+			value string
+		)
+
+		index := strings.Index(data, " ")
 		if index <= 0 {
 			break
 		}
+		key = strings.TrimSpace(data[:index])
+		data = data[index+1:]
+		data = strings.TrimSpace(data)
 
-		key := strings.TrimSpace(dataStr[:index])
-		key = strings.ReplaceAll(key, "\n", "")
+		// url
+		if !strings.HasPrefix(key, "-") {
+			key = strings.Trim(key, "'")
+			curl.Data["curl"] = []string{key}
 
-		dataStr = dataStr[index+1:]
+			// 去除首尾空格
+			data = strings.TrimFunc(data, func(r rune) bool {
+				if r == ' ' || r == '\\' || r == '\n' {
+					return true
+				}
 
-		index = strings.Index(dataStr, "'")
-
-		if index <= 0 {
-			break
+				return false
+			})
+			continue
 		}
 
-		value := dataStr[:index]
+		if strings.HasPrefix(data, "-") {
+			continue
+		}
 
-		dataStr = dataStr[index+1:]
+		var (
+			endSymbol = " "
+		)
+
+		if strings.HasPrefix(data, "'") {
+			endSymbol = "'"
+			data = data[1:]
+		}
+
+		index = strings.Index(data, endSymbol)
+		if index <= -1 {
+			index = len(data)
+			// break
+		}
+		value = data[:index]
+		if len(data) >= index+1 {
+			data = data[index+1:]
+		} else {
+			data = ""
+		}
+
+		// 去除首尾空格
+		data = strings.TrimFunc(data, func(r rune) bool {
+			if r == ' ' || r == '\\' || r == '\n' {
+				return true
+			}
+
+			return false
+		})
+
+		if key == "" {
+			continue
+		}
 
 		curl.Data[key] = append(curl.Data[key], value)
 
+		// break
+
 	}
+
+	// debug
+	// for key, value := range curl.Data {
+	// 	fmt.Println("key:", key, "value:", value)
+	// }
 
 	return
 }
@@ -89,12 +168,9 @@ func (c *CURL) String() (url string) {
 
 // GetUrl
 func (c *CURL) GetUrl() (url string) {
-	value, ok := c.Data["curl"]
-	if !ok {
 
-		return
-	}
-
+	keys := []string{"curl", "--url"}
+	value := c.getDataValue(keys)
 	if len(value) <= 0 {
 
 		return
@@ -107,34 +183,25 @@ func (c *CURL) GetUrl() (url string) {
 
 // GetMethod
 func (c *CURL) GetMethod() (method string) {
-	method = "GET"
-
-	if _, ok := c.Data["--data"]; ok {
-		method = "POST"
-
-		return
-	}
-
-	// TODO::目前发送不了
-	if _, ok := c.Data["--data-binary $"]; ok {
-		method = "POST"
-
-		return
-	}
-
-	value, ok := c.Data["-X"]
-	if !ok {
-
-		return
-	}
-
+	keys := []string{"-X", "--request"}
+	value := c.getDataValue(keys)
 	if len(value) <= 0 {
-
-		return
+		return c.defaultMethod()
 	}
-
 	method = strings.ToUpper(value[0])
+	if helper.InArrayStr(method, []string{"GET", "POST", "PUT", "DELETE"}) {
+		return method
+	}
+	return c.defaultMethod()
+}
 
+// defaultMethod 获取默认方法
+func (c *CURL) defaultMethod() (method string) {
+	method = "GET"
+	body := c.GetBody()
+	if len(body) > 0 {
+		return "POST"
+	}
 	return
 }
 
@@ -142,22 +209,11 @@ func (c *CURL) GetMethod() (method string) {
 func (c *CURL) GetHeaders() (headers map[string]string) {
 	headers = make(map[string]string, 0)
 
-	value, ok := c.Data["-H"]
-	if !ok {
-
-		return
-	}
+	keys := []string{"-H", "--header"}
+	value := c.getDataValue(keys)
 
 	for _, v := range value {
-		index := strings.Index(v, ":")
-		if index < 0 {
-			continue
-		}
-
-		vIndex := index + 2
-		if len(v) >= vIndex {
-			headers[v[:index]] = v[vIndex:]
-		}
+		getHeaderValue(v, headers)
 	}
 
 	return
@@ -172,37 +228,35 @@ func (c *CURL) GetHeadersStr() string {
 }
 
 // 获取body
-func (c *CURL) GetBody() (body io.Reader) {
+func (c *CURL) GetBody() (body string) {
 
-	value, ok := c.Data["--data"]
-	if !ok {
-		// data-binary
-		value, ok = c.Data["--data-binary $"]
-		if !ok {
+	keys := []string{"--data", "-d", "--data-urlencode", "--data-raw", "--data-binary"}
+	value := c.getDataValue(keys)
 
-			return
-		}
+	if len(value) <= 0 {
+		body = c.getPostForm()
+
+		return
 	}
+
+	// body = strings.NewReader(value[0])
+	body = value[0]
+
+	return
+}
+
+func (c *CURL) getPostForm() (body string) {
+	keys := []string{"--form", "-F", "--form-string"}
+	value := c.getDataValue(keys)
 
 	if len(value) <= 0 {
 
 		return
 	}
 
-	body = strings.NewReader(value[0])
+	body = strings.Join(value, "&")
 
 	return
 }
 
-// 获取body
-func (c *CURL) GetBodyStr() (str string) {
 
-	body := c.GetBody()
-	if body == nil {
-
-		return
-	}
-	bytes, _ := ioutil.ReadAll(body)
-	str = string(bytes)
-	return
-}
